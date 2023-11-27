@@ -47,7 +47,7 @@ This project is an attempt to run Home Assistant on a Nvidia Jetson Xavier AGX. 
     1. `sudo pip3 install docker-compose`
 1. Install jtop (Optional)
     This is a tool to monitor the Jetson Xavier AGX.
-    Option 1:
+    1. Option 1:
         1. Install Pip
             1. `sudo apt-get install python3-pip`
         1. Install jtop
@@ -55,7 +55,7 @@ This project is an attempt to run Home Assistant on a Nvidia Jetson Xavier AGX. 
             1. `sudo reboot`
             1. Run jtop to see the stats of the Jetson Xavier AGX
             1. `sudo jtop`
-    Option 2:
+    1. Option 2:
         1. Run the docker container.
             1. `sudo docker run --rm -it -v /run/jtop.sock:/run/jtop.sock rbonghi/jetson_stats:latest`
 
