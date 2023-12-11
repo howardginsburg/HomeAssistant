@@ -11,8 +11,10 @@ This project is an attempt to run Home Assistant on a Nvidia Jetson Xavier AGX. 
 ### Jetson Xavier AGX
 1. Install Nvidia Jetson Linux using the [SDK Manager](https://developer.nvidia.com/sdk-manager).
 1. Install the latest updates.
-    1. `sudo apt-get update`
-    1. `sudo apt-get upgrade`
+```console
+sudo apt-get update
+sudo apt-get upgrade
+```
 1. Change hostname to 'nvidia'
     1. `hostnamectl set-hostname nvidia`
 1. Mount NVME drive
