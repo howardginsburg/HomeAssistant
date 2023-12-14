@@ -5,6 +5,7 @@ services:
     image: homeassistant/home-assistant:latest
     volumes:
       - /mnt/nvme/homeassistant/config:/config
+      - /mnt/nvme/ssl:/ssl
     environment:
       - TZ=America/New_York
     restart: unless-stopped
@@ -21,6 +22,48 @@ services:
     ports:
       - 1883:1883
       - 9001:9001
+
+  duckdns:
+    image: lscr.io/linuxserver/duckdns:latest
+    container_name: duckdns
+    network_mode: host #optional
+    environment:
+      - PUID=1000 #optional
+      - PGID=1000 #optional
+      - TZ=Etc/UTC #optional
+      - SUBDOMAINS=<your duck domain subdomain>
+      - TOKEN=<your duckdns token>
+      - UPDATE_IP=ipv4 #optional
+      - LOG_FILE=false #optional
+    volumes:
+      - /mnt/nvme/ducksnd/config:/config #optional
+    restart: unless-stopped
+
+  swag:
+    image: lscr.io/linuxserver/swag:latest
+    container_name: swag
+    cap_add:
+      - NET_ADMIN
+    environment:
+      - PUID=1000
+      - PGID=1000
+      - TZ=Etc/UTC
+      - URL=<yourducksubdomain>.duckdns.org
+      - VALIDATION=http
+      - SUBDOMAINS=www, #optional
+      #- CERTPROVIDER= #optional
+      #- DNSPLUGIN=cloudflare #optional
+      #- PROPAGATION= #optional
+      - EMAIL= <your email>
+      #- ONLY_SUBDOMAINS=false #optional
+      #- EXTRA_DOMAINS= #optional
+      #- STAGING=false #optional
+    volumes:
+      - /mnt/nvme/swag:/config
+    ports:
+      - 443:443
+      - 80:80 #optional
+    restart: unless-stopped
 
   v4l2rtspserver:
     container_name: v4l2rtspserver

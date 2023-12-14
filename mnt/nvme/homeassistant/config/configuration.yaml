@@ -2,6 +2,10 @@
 # Loads default set of integrations. Do not remove.
 default_config:
 
+http:
+  ssl_certificate: /ssl/fullchain.pem
+  ssl_key: /ssl/privkey.pem
+
 # Load frontend themes from the themes folder
 frontend:
   themes: !include_dir_merge_named themes
@@ -17,6 +21,8 @@ zoneminder:
   - host: localhost
     ssl: false
     verify_ssl: false
+    username: <Your ZM Username>
+    password: <Your ZM Password>
 
 # Example configuration.yaml entry
 camera:
