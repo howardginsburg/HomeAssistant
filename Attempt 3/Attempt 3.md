@@ -67,6 +67,7 @@ This will allow you to access Home Assistant from outside your home network.  We
 1. From the Tailscale admin page,
   1. Authorize the device.
   1. Disable Key Expiry.
+1. From the Tailscale Addon, open the Web UI and select 'Stop Advertising Exit Node'.
 
 ### Install Home Assistant and Tailscale on your phone
 
