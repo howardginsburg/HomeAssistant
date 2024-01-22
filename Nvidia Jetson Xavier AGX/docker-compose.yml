@@ -70,7 +70,7 @@ services:
     image: mpromonet/v4l2rtspserver
     restart: unless-stopped
     devices:
-      - /dev/video0:/dev/video0
+      - /dev/video1:/dev/video1
     command: "-F 25 -H 720 -W 1280"
     ports:
       - 8554:8554

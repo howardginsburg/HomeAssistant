@@ -1,6 +1,6 @@
 # HomeAssistant and ZoneMinder on Nvidia Jetson Xavier AGX
 
-This first attempt is to run Home Assistant and Zoneminder on a Nvidia Jetson Xavier AGX.  The goal is to have a single device that can run Home Assistant, ZoneMinder, and other supporting services.  The Jetson Xavier AGX is a powerful device that can run multiple docker containers at the same time.  This allows for a single device to run multiple services.
+This attempt is to run Home Assistant and Zoneminder on a Nvidia Jetson Xavier AGX.  The goal is to have a single device that can run Home Assistant, ZoneMinder, and other supporting services.  The Jetson Xavier AGX is a powerful device that can run multiple docker containers at the same time.  This allows for a single device to run multiple services.
 
 ## Hardware
 1. [Nvidia Jetson Xavier AGX](https://developer.nvidia.com/embedded/jetson-agx-xavier-developer-kit)
@@ -10,7 +10,7 @@ This first attempt is to run Home Assistant and Zoneminder on a Nvidia Jetson Xa
 
 ### Hardware Setup
 
-Follow the Jetson Xavier AGX [setup](/Nvidia%20Jetson%20Xavier%20AGX.md) instructions.
+Follow the Jetson Xavier AGX [setup](/Nvidia%20Jetson%20Xavier%20AGX/Nvidia%20Jetson%20Xavier%20AGX.md) instructions.
 
 ## Software Setup
 
@@ -143,6 +143,4 @@ You can also manually run the container by running:
 
 ## Setup Fail
 
-As I started stitching this together and seeing all the other addons in the Home Assistant addon marketplace, I realized that not having this available to me was making the setup quite challenging.  I decided to pause at this point and try a different approach.  Refer to [Attempt 2](/Attempt%202/Attempt%202.md) for the next attempt.
-
-Also, for this initial build, I did this at home and was using Verizon Fios internet which supports port forwarding.  As we'll see in Attempt 2, port forwarding is not supported on T-Mobile Home Internet.
+As I started stitching this together and seeing all the other addons in the Home Assistant addon marketplace, I realized that not having this available to me was making the setup quite challenging.  I decided to pause at this point and try a different approach.

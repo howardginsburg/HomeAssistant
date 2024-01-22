@@ -1,4 +1,4 @@
-# Attempt 2 - Home Assistant and ZoneMinder
+# Home Assistant on Raspberry Pi w/Port Forwarding
 
 After learning how hard it was to manually run Home Assistant, I decided to try the Home Assistant OS image on a Raspberry Pi 4.  This is much easier to setup and maintain.  I also decided to use the Nginx Proxy Manager addon to handle the SSL certificates and reverse proxy.  This is much easier to setup and maintain than the previous solution.  Since we were able to get ZoneMinder working on the Xavier, we will continue to use that.
 

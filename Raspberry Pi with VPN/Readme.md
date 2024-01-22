@@ -1,4 +1,4 @@
-# Attempt 3 - Home Assistant and ZoneMinder
+# Raspberry Pi with VPN
 
 After learning that T-Mobile does not support port forwarding, my next attempt was to try setting up a VPN to get remote access.
 
@@ -62,22 +62,31 @@ This will allow you to access Home Assistant from outside your home network.  We
 
 1. Add the Tailscale Addon.
 1. Under Info, select 'Start on boot', 'Watchdog', and 'Auto Update'.
+1. Under Configuration, set the Options yaml to be:
+```yaml
+funnel: true
+proxy: true
+```
 1. Start the addon.
 1. In the logs, you'll see a URL to authorize the device.  Copy this URL and paste it into a browser.
 1. From the Tailscale admin page,
   1. Authorize the device.
   1. Disable Key Expiry.
+1. From the Tailscale admin page -> Access Control
+  1. Enable Funnel.
 1. From the Tailscale Addon, open the Web UI and select 'Stop Advertising Exit Node'.
 
-### Install Home Assistant and Tailscale on your phone
+### Install Home Assistant on your phone
 
-1. Install the Tailscale app on your phone and login.
-1. Select your homeassistant device to get the tailscale ip address for it.
 1. Make sure Tailscale is 'Active'.
 1. Install the Home Assistant app on your phone.
-1. Open the Home Assistant app and login.  The url should be the https://<tailscaleip>:8123.
+1. Open the Home Assistant app and login.  The url should be the https://homeassistant.<your tailscale>.ts.net.
 
 ## Qolsys IQ Panel 2 Integration
 
-1. Follow the [instructions](/Qolsys.md) to integrate the Qolsys IQ Panel 2 with Home Assistant.
+1. Follow the [instructions](/Raspberry%20Pi%20with%20VPN/Qolsys.md) to integrate the Qolsys IQ Panel 2 with Home Assistant.
+
+## ZoneMinder Integration
+
+I decided to stop here as the cameras I was planning to interface have security I cannot get past, so they need to be replaced.  For now, I'm running just the Raspberry Pi and using it as a Home Assistant server.
 
