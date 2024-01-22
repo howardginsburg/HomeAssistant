@@ -1,4 +1,4 @@
-# Home Assistant and Zoneminder
+# Home Automation and Video Surveillance
 
 ## Introduction
 
