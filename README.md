@@ -102,7 +102,8 @@ This next section will load the latest firmware onto the camera and configure it
 1. Download the latest firmware for the camera at from [Anpviz](https://anpvizsupport.com/download/u-series_c0030).  Make sure to select the firmware for camera IPC-D240W-S.
 1. Plug in the camera to the PoE switch.
 1. Find the camera IP address using your router's admin page.
-1. Open the camera in a web browser and login with the default credentials. (admin:123456)
+1. Update your router to give the camera a static IP address.
+1. Open the camera in a web browser at http://cameraipaddress and login with the default credentials. (admin:123456)
 1. Select System -> Upgrade and select the firmware file you downloaded.
 1. Select Camera -> Vieo and specify the following settings:
     - Stream Type: Main Stream
@@ -335,6 +336,8 @@ record:
 objects:
   track:
     - person
+    - dog
+    - cat
 
 # URL for the MQTT server to communicate with Home Assistant.
 mqtt:
