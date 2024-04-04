@@ -30,6 +30,8 @@ The instructions provided by UP are a bit dated, so I created a simplified versi
 - The Wiki for the Up community can be found at https://github.com/up-board/up-community/wiki
 - Full instructions for hardware setup can be found at https://github.com/up-board/up-community/wiki/Ubuntu_20.04.  Note, there is currently no kernel for Ubuntu 22.04 and beyond.
 
+Note, for purposes of this tutorial, the hostname for my Upboard device is upboard.local.
+
 ### Ubuntu Installation
 
 1. Download the [Ubuntu 20.04 Desktop](https://releases.ubuntu.com/20.04.4/ubuntu-20.04.4-desktop-amd64.iso) ISO, burn it to a thumbdrive, and perform a minimal installation.
@@ -152,7 +154,7 @@ services:
     network_mode: host
 ```
 2. Start the container with `docker compose up -d`.
-3. Verify that Home Assistant is running by going to http://<servername>:8123.
+3. Verify that Home Assistant is running by going to http://upboard.local:8123.
 4. Complete the initial setup of Home Assistant.
 5. Click on your User profile in the bottom left corner.
 6. Generate a Long Lived Access Token and note it down.  We'll need this later to connect AppDaemon to Home Assistant.
@@ -372,7 +374,7 @@ logger:
 ```
 3. Replace the name of your camera and rtsp url.
 4. Start the container with `docker compose up -d`.
-5. Open the Frigate UI at http://<servername>:5000 and verify that your camera is working.
+5. Open the Frigate UI at http://upboard.local:5000 and verify that your camera is working.
 6. Follow the [instructions](https://docs.frigate.video/integrations/home-assistant) to integrate Frigate with Home Assistant.
   1. Home Assistant > HACS > Integrations > "Explore & Add Integrations" > Frigate
   1. Shut down the containers with `docker-compose down`.
@@ -412,9 +414,9 @@ zwave-js-ui:
         - '8091:8091' # port for web interface
         - '3000:3000' # port for Z-Wave JS websocket server
 ```
-1. Open the Z-Wave UI at http://<servername>:8091.
+1. Open the Z-Wave UI at http://upboard.local:8091.
 1. Select Settings -> Home Assistant and enable WS-Server.  Be sure to save!
-1. Go to the Home Assistant UI at http://<servername>:8123.
+1. Go to the Home Assistant UI at http://upboard.local:8123.
 1. Select Settings -> Devices and Services -> Integrations -> Add Integration.
 1. Search for Z-Wave and click on Submit.
 
@@ -435,4 +437,4 @@ http:
     - 127.0.0.1
 ```
 6. Start the container with `docker compose up -d`.
-7. Verify you can access Home Assistant at http://<tailscale_full_domain>:8123.
+7. Verify you can access Home Assistant at http://tailscale_full_domain_url.
