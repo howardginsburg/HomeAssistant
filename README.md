@@ -21,6 +21,7 @@ This tutorial covers off on how to setup a home automation system that leverages
 1. [AppDaemon](https://github.com/AppDaemon/appdaemon) which is the execution platform that will run the Qolsys Gateway software.
 1. [Z-Wave JS](https://zwave-js.github.io/zwave-js-ui/) to recognize and manage Z-Wave devices.
 1. [Mosquitto MQTT Broker](https://mosquitto.org/) for communication between Home Assistant, AppDaemon, Frigate, and Z-Wave.
+1. [Portainer](https://www.portainer.io/) for managing and monitoring Docker containers.
 1. [Tailscale](https://tailscale.com/) for remote access.
 
 ## UP Squared Setup
@@ -315,6 +316,8 @@ cameras:
         - path: rtsp://admin:123456@<CAMERA IP ADDRESS>:554/stream1
           roles:
             - detect
+        output_args:
+        record: preset-record-generic-audio-aac
     record:
       enabled: True
     snapshots:
@@ -388,6 +391,7 @@ logger:
   1. Shut down the containers with `docker-compose down`.
   1. Start the containers with `docker compose up -d`.
   1. Home Assistant > Overview > Add Card > Frigate
+7. Shut down the containers with `docker-compose down`.
 
 ### Z-Wave
 
@@ -414,13 +418,43 @@ zwave-js-ui:
         - '8091:8091' # port for web interface
         - '3000:3000' # port for Z-Wave JS websocket server
 ```
+1. Start the containers with `docker compose up -d`.
 1. Open the Z-Wave UI at http://upboard.local:8091.
 1. Select Settings -> Home Assistant and enable WS-Server.  Be sure to save!
 1. Go to the Home Assistant UI at http://upboard.local:8123.
 1. Select Settings -> Devices and Services -> Integrations -> Add Integration.
 1. Search for Z-Wave and click on Submit.
+1. Add any z-wave devices to your Home Assistant system by selecting Z-Wave when adding a new device.
+1. Shut down the containers with `docker-compose down`.
 
-You should now be able to add any z-wave devices to your Home Assistant system by selecting Z-Wave when adding a new device.
+### Portainer
+
+Portainer is a web interface for managing Docker containers.  It is useful for monitoring the status of your containers and logs.  This is not
+fool proof as Home Assistant and Portainer must both be up and running.  But, it's helpful in monitoring the status of all the other containers.
+
+1. Edit the docker-compose.yaml file and add the following to the services section:
+```yaml
+  portainer:
+    container_name: portainer
+    image: portainer/portainer-ce
+    restart: always
+    ports:
+      - 9000:9000
+    #network_mode: host
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - /opt/homeautomation/portainer:/data
+    command: --base-url="/portainer/"
+```
+1. Start the containers with `docker compose up -d`.
+1. Open the Portainer UI at http://upboard.local:9000.
+1. Create an admin user and password.
+1. Select Local and Connect.
+1. Under your profile, create an access token.
+1. Home Assistant > HACS > Search > Portainer.
+1. Home Assistant > Settings > Devices & Services > Add Integration > Portainer
+  1. Use `upboard.local:9000` as the URL.
+1. You can now create automations in Home Assistant to monitor your containers.
 
 ## Enable Remote Access via VPN and Proxy
 1. Install [Tailscale](https://tailscale.com/kb/1039/install-ubuntu-2004).
