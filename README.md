@@ -393,6 +393,36 @@ logger:
   1. Home Assistant > Overview > Add Card > Frigate
 7. Shut down the containers with `docker-compose down`.
 
+#### Frigate Recording Delete
+
+There's an issue with the Frigate configuration where it's not deleting recordings.  The workaround is a cron job that deletes recordings older then 30 days.
+
+1. Create a file /opt/homeautomation/cleanup/deleterecordings.sh with the following contents:
+```bash
+#!/bin/bash
+
+# Directory containing your video recordings
+BASE_DIR="/media/usb/frigate/storage/recordings"
+
+# Find and delete directories older than 30 days
+find "$BASE_DIR" -type d -mtime +30 -exec rm -rf {} \;
+
+# Find and delete empty directories, including nested ones
+find "$BASE_DIR" -type d -empty -delete
+```
+1. Make the script executable:
+```bash
+chmod +x /opt/homeautomation/cleanup/deleterecordings.sh
+```
+1. Create a cron job to run the script daily:
+```bash
+crontab -e
+```
+1. Add the following line to the crontab file:
+```bash
+0 0 * * * /opt/homeautomation/cleanup/deleterecordings.sh
+```
+
 ### Z-Wave
 
 1. Get the Z-Wave stick reference by running `ls /dev/serial/by-id/`.
