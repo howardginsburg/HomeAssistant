@@ -4,16 +4,24 @@
 
 This tutorial covers off on how to setup a home automation system that leverages a security panel, video surveillance, and z-wave enabled devices.  The system is built on top of the UP Squared AI Vision X Developer Kit, which includes a Myriad X chip for video inferencing.  The system is built on top of Home Assistant, and uses Frigate for video surveillance.  The system is designed to be a DIY project, and is not intended to be a commercial product.
 
-### Hardware
+### MYRIAD Update 7/9/2025
 
-1. [UP Squared AI Vision X Developer Kit](https://up-board.org/upkits/up-squared-ai-vision-kit/) for the main hardware.  It also includes a Myriad X chip for video inferencing.
-1. [Western Digital 2TB drive](https://www.amazon.com/gp/product/B06W55K9N6/ref=ppx_yo_dt_b_search_asin_title?ie=UTF8&psc=1) for storage.
+Intel [discontinued](https://www.intel.com/content/www/us/en/support/articles/000090446/boards-and-kits/neural-compute-sticks.html) support for the Neural Compute Stick 2 (NCS2) which uses Myriad X chip.  As a result, Frigate removed [support](https://github.com/blakeblackshear/frigate/discussions/12855) for Myriad devices all together.  The UP Squared AI Vision X Developer Kit does have an Intel GPU, so we can use that for video inferencing.
+
+### HDD to SSD
+
+I originally used a Western Digital 2TB HDD for storage.  Eventually, the drive failed and I replaced it with an SSD for speed of copying files and reliability.
+
+## Hardware
+
+1. [UP Squared AI Vision X Developer Kit](https://up-board.org/upkits/up-squared-ai-vision-kit/) for the main hardware.  It also includes a Myriad X chip for video inferencing. Note, Myriad X support discontinued in Frigate.  We will use the Intel GPU instead.
+1. [SanDisk 2TB SSD drive](https://www.amazon.com/dp/B08HN37XC1?ref_=ppx_hzod_title_dt_b_fed_asin_title_0_0&th=1) for storage.
 1. [Qolsys IQ Panel 2](https://qolsys.com/iq-panel-2/) for the home security system.  Note, I already had this with several sensors.  I would recommend an open source route if you're building from sratch.
 1. [Anpviz 4MP PoE IP Dome Cameras](https://www.amazon.com/dp/B07TJT1Z1H?ref=ppx_yo2ov_dt_b_product_details&th=1)
 1. PoE Switch for powering the cameras.
 1. [Aeotec Z-Stick 7 Plus](https://www.amazon.com/dp/B094NW5B68)
 
-### Software
+## Software
 
 1. [Home Assistant](https://www.home-assistant.io/) for Home Automation.
 1. [Frigate](https://frigate.video/) for Video Surveillance.
@@ -84,17 +92,20 @@ Note, for purposes of this tutorial, the hostname for my Upboard device is upboa
 
 1. Plug in the external drive.
 1. Find the drive
-    - `sudo fdisk -l`
+    - `sudo lsblk`
+1. Format the drive
+    - `sudo mkfs.ext4 /dev/sda1` 
+        - Note, replace `/dev/sda1` with the correct drive identifier.
 1. Create a directory to use as the mount.
-    - `sudo mkdir /media/usb`
+    - `sudo mkdir /media/external`
 1. Mount the drive
-    - `sudo mount /dev/sda1 /media/usb`
+    - `sudo mount /dev/sda1 /media/external`
 1. Retrieve the UUID of the drive
     - `sudo blkid`
 1. Add the drive to /etc/fstab
     - `sudo nano /etc/fstab`
         - Add the following line to the end of the file, replacing `<YOURUID>`:
-            - `UUID=<YOURUID> /media/usb auto defaults,nofail,x-systemd.automount 0 2`
+            - `UUID=<YOURUID> /media/external auto defaults,nofail,x-systemd.automount 0 2`
 1. Reboot
     - `sudo reboot`
 
@@ -287,18 +298,21 @@ qolsys_panel:
     privileged: true # this may not be necessary for all setups
     restart: unless-stopped
     image: ghcr.io/blakeblackshear/frigate:stable
-    shm_size: "64mb" # update for your cameras based on calculation above
+    shm_size: "86mb" # update for your cameras based on calculation above
+    #This allows access to the Myriad X VPU for video inferencing.  Shouldn't need this if you're using the Intel GPU.
     device_cgroup_rules:
       - "c 189:* rmw" # enables access to the Myriad X VPU
     volumes:
-      - /dev/bus/usb:/dev/bus/usb # enables access to the Myriad X VPU
+      - /dev/bus/usb:/dev/bus/usb # enables access to the Myriad X VPU.  Shouldn't need this if you're using the Intel GPU.
       - /etc/localtime:/etc/localtime:ro
       - /opt/homeautomation/frigate/config:/config
-      - /opt/homeautomation/frigate/storage:/media/frigate
+      - /media/external/frigate/storage:/media/frigate
+      # The instructions say to use tmpfs for the cache, but I found that it fills too fast and causes issues.  Instead, we'll use the hdd for the cache.
       - type: tmpfs # Optional: 1GB of memory, reduces SSD/SD Card wear
-        target: /tmp/cache
-        tmpfs:
-          size: 1000000000
+       target: /tmp/cache
+       tmpfs:
+         size: 1000000000
+      #-/media/usb/frigate/cache:/tmp/cache # Use the external drive for the cache
     environment:
       FRIGATE_RTSP_PASSWORD: "password"
     network_mode: host
@@ -326,16 +340,20 @@ cameras:
       enabled: True
 
 
-# Configuration for recording to save all motion for 7 days, but any events for 30.
+# Configuration for recording to save all recordings for 20 days.  All alerts and detections for 20 days as well or cusdtomize.
 record:
   enabled: True
   retain:
-    days: 7
-    mode: motion
-  events:
+    days: 20
+    mode: all
+  alerts:
     retain:
-      default: 30
-      mode: active_objects
+      default: 20
+      mode: motion
+  detections:
+    retain:
+      default: 20
+      mode: motion
 
 # Objects we want to track during detection.
 objects:
@@ -347,7 +365,7 @@ objects:
 # URL for the MQTT server to communicate with Home Assistant.
 mqtt:
   enabled: True
-  host: localhost
+  host: upboard.local
   port: 1883
 
 # Hardware acceleration for the UP Squared Vision AI Dev Kit which is running an Intel processor.
@@ -358,7 +376,7 @@ ffmpeg:
 detectors:
   ov:
     type: openvino
-    device: MYRIAD
+    device: GPU #MYRIAD - use the GPU instead of the Myriad X VPU
     model:
       path: /openvino-model/ssdlite_mobilenet_v2.xml
 
@@ -374,6 +392,14 @@ model:
 logger:
   # Optional: default log level (default: shown below)
   default: info
+
+# Disable authentication on the Frigate UI.
+auth:
+  enabled: false
+
+# Disable TLS on the Frigate UI.
+tls:
+  enabled: false
 ```
 3. Replace the name of your camera and rtsp url.
 4. Start the container with `docker compose up -d`.
@@ -402,7 +428,7 @@ There's an issue with the Frigate configuration where it's not deleting recordin
 #!/bin/bash
 
 # Directory containing your video recordings
-BASE_DIR="/media/usb/frigate/storage/recordings"
+BASE_DIR="/media/external/frigate/storage/recordings"
 
 # Find and delete directories older than 30 days
 find "$BASE_DIR" -type d -mtime +30 -exec rm -rf {} \;
@@ -431,7 +457,7 @@ crontab -e
 zwave-js-ui:
     container_name: zwave-js-ui
     image: zwavejs/zwave-js-ui:latest
-    restart: always
+    restart: unless-stopped
     tty: true
     stop_signal: SIGINT
     environment:
@@ -444,9 +470,7 @@ zwave-js-ui:
         - '/dev/serial/by-id/insert_stick_reference_here:/dev/zwave'
     volumes:
         - /opt/homeautomation/zwave:/usr/src/app/store
-    ports:
-        - '8091:8091' # port for web interface
-        - '3000:3000' # port for Z-Wave JS websocket server
+    network_mode: host
 ```
 1. Start the containers with `docker compose up -d`.
 1. Open the Z-Wave UI at http://upboard.local:8091.
@@ -468,9 +492,7 @@ fool proof as Home Assistant and Portainer must both be up and running.  But, it
     container_name: portainer
     image: portainer/portainer-ce
     restart: always
-    ports:
-      - 9000:9000
-    #network_mode: host
+    network_mode: host
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
       - /opt/homeautomation/portainer:/data
