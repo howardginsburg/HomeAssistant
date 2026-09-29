@@ -12,6 +12,34 @@ Intel [discontinued](https://www.intel.com/content/www/us/en/support/articles/00
 
 I originally used a Western Digital 2TB HDD for storage.  Eventually, the drive failed and I replaced it with an SSD for speed of copying files and reliability.
 
+### Deployment update: September 29, 2026
+
+The deployment now runs Frigate **0.18.0**, upgraded from 0.17.2, with go2rtc providing main-stream live video for all four cameras. Application-owned log files remain independent of Docker's console logs.
+
+| Component | Verified deployment |
+|---|---|
+| Frigate | `ghcr.io/blakeblackshear/frigate:0.18.0` |
+| Home Assistant | `homeassistant/home-assistant:2026.9` |
+| Mosquitto | `eclipse-mosquitto:2.1.2-alpine` |
+| AppDaemon | `acockburn/appdaemon:4.4.2` |
+| Z-Wave JS UI | `zwavejs/zwave-js-ui:11.23` |
+| Portainer | `portainer/portainer-ce:2.45.0` |
+| Host | Intel Atom E3950, approximately 8 GB RAM, Ubuntu 20.04.6, UP-specific 5.4 kernel |
+| Storage | Internal eMMC for the OS/Docker; external 2 TB SSD for recordings |
+
+Only Frigate was upgraded during this maintenance; the other image versions were already deployed. These are dated, verified versions, not floating recommendations to always install `latest`. The host OS/kernel was not upgraded. The Ubuntu instructions below describe the existing installation, not a recommendation to start a new deployment on an unsupported OS.
+
+Completed changes:
+
+- Pinned Frigate to 0.18.0 and increased shared memory from 86 MB to 256 MB.
+- Added HD live streams while retaining direct-to-camera recording inputs and low-resolution detection.
+- Preserved camera firmware, G.711 audio, recording retention, and GPU acceleration.
+- Added bounded Docker console logs, host-managed application file rotation, and explicit system journal limits.
+- Backed up configuration, logs, and the pre-upgrade Frigate database; retained the 0.17.2 image for rollback.
+- Removed only approved, unused old Docker images to provide upgrade space. No volumes or camera footage were manually deleted.
+
+Examples use placeholders instead of deployed credentials, camera addresses, or device identifiers. Keep real credentials, databases, backups, and generated logs out of Git.
+
 ## Hardware
 
 1. [UP Squared AI Vision X Developer Kit](https://up-board.org/upkits/up-squared-ai-vision-kit/) for the main hardware.  It also includes a Myriad X chip for video inferencing. Note, Myriad X support discontinued in Frigate.  We will use the Intel GPU instead.
@@ -111,23 +139,23 @@ Note, for purposes of this tutorial, the hostname for my Upboard device is upboa
 
 ## Anpviz Camera Setup
 
-This next section will load the latest firmware onto the camera and configure it to run optimally with Frigate.
+The four IPC-D240W-S cameras have the following inspected settings. Firmware and video settings were left unchanged during the Frigate upgrade.
 
-1. Download the latest firmware for the camera at from [Anpviz](https://anpvizsupport.com/download/u-series_c0030).  Make sure to select the firmware for camera IPC-D240W-S.
+**Do not choose firmware by the IPC-D240W-S product name alone.** Front, SideDoor, and Back use the MCF26 V3.3.0.6 firmware family; Side uses 40E-V3 V3.4.0.10. Firmware was reviewed using the [manufacturer's catalog](https://anpvizsupport.com/download/u-series_c0030), but no update was applied. Confirm the exact hardware family with the manufacturer before any future update.
+
 1. Plug in the camera to the PoE switch.
 1. Find the camera IP address using your router's admin page.
-1. Update your router to give the camera a static IP address.
-1. Open the camera in a web browser at http://cameraipaddress and login with the default credentials. (admin:123456)
-1. Select System -> Upgrade and select the firmware file you downloaded.
-1. Select Camera -> Vieo and specify the following settings:
+1. Use a DHCP reservation for a stable address. Reservations and credential changes remain separate configuration tasks.
+1. Open the camera in a web browser at http://cameraipaddress and log in with its administrator credentials.
+1. Under Camera -> Video, check the following tested baseline:
     - Stream Type: Main Stream
         - Status: Enable
         - Video Compression: H.264
         - Resolution: 2560x1440
         - Frame Rate: 15
         - Bit Rate Type: VBR
-        - Quality: Good
-        - Bit Rate: 3500
+        - Quality: Best
+        - Bit Rate: 5120 kbps
         - Frame Interval: 30
         - Customize QP: Disable
     - Stream Type: Sub Stream
@@ -136,10 +164,18 @@ This next section will load the latest firmware onto the camera and configure it
         - Resolution: 640x360
         - Frame Rate: 5
         - Bit Rate Type: VBR
-        - Quality: Good
-        - Bit Rate: 500
+        - Quality: Best
+        - Bit Rate: 512 kbps
         - Frame Interval: 5
         - Customize QP: Disable
+
+### Camera audio
+
+Keep the camera encoder on **G.711 mu-law (PCMU), 8 kHz, 64 kbps**. Frigate converts this audio to AAC for recordings using `preset-record-generic-audio-aac`. go2rtc can also produce AAC on demand for live clients; this is software conversion, not camera-native AAC.
+
+A temporary native-AAC test on Front using **Frigate 0.17.2 / FFmpeg 7** caused RTSP/AAC parsing problems and an approximately two-minute recording gap. G.711 was restored and verified. Native AAC has **not** been retested on 0.18.0 / FFmpeg 8 and is not required for HD live video.
+
+Changing the main-stream GOP from 30 to 15 or reducing bitrate may be worth a controlled future test, but neither change was applied.
 
 ## Software Setup
 
@@ -150,13 +186,21 @@ This next section will load the latest firmware onto the camera and configure it
 
 ### Home Assistant
 
-1. Create a file /opt/homeautomation/docker-compose.yaml file with the following contents:
+1. Create `/opt/homeautomation/docker-compose.yml` with the following contents. Run Compose commands from `/opt/homeautomation`. All later service examples belong under this same `services` mapping and reuse the logging anchor:
 ```yaml
 version: '3.9'
+x-logging: &default-logging
+  # Console logging is separate from application-owned log files.
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+
 services:
   homeassistant:
     container_name: homeassistant
-    image: "ghcr.io/home-assistant/home-assistant:stable"
+    logging: *default-logging
+    image: homeassistant/home-assistant:2026.9
     volumes:
       - /opt/homeautomation/homeassistant:/config
       - /etc/localtime:/etc/localtime:ro
@@ -165,11 +209,13 @@ services:
     privileged: true
     network_mode: host
 ```
-2. Start the container with `docker compose up -d`.
+2. Start the container with `docker compose up -d homeassistant`.
 3. Verify that Home Assistant is running by going to http://upboard.local:8123.
 4. Complete the initial setup of Home Assistant.
 5. Click on your User profile in the bottom left corner.
 6. Generate a Long Lived Access Token and note it down.  We'll need this later to connect AppDaemon to Home Assistant.
+
+Keep Home Assistant's normal file logging enabled; do **not** set `HA_DISABLE_LOG_FILE=true`. Its files remain in `/opt/homeautomation/homeassistant` and are managed by the host rotation policy below. The existing Compose `version` key is accepted but produces an obsolete-key warning in Compose v2.
 
 ### Home Assistant Community Store (HACS)
 
@@ -178,25 +224,26 @@ HACS provides us wth the Frigate integration for Home Assistant.
   - `docker exec -it homeassistant bash`
 2. Run the following commands to install HACS:
   - `wget -O - https://get.hacs.xyz | bash -`
-3. Shut down the container with `docker-compose down`.
-4. Start the container with `docker compose up -d`.
+3. Restart only Home Assistant with `docker compose restart homeassistant`.
+4. Wait for Home Assistant to become available.
 5. Go to Settings -> Integrations -> Add Integration.
 6. Search for HACS and click on Configure.
 7. Select all the checkboxes.
 8. Click on Submit.
 9. Follow the GitHub prompts to complete the setup.
-10. Shut down the container with `docker-compose down`.
+10. Leave the service running while configuring the remaining components.
 
 ### MQTT
 
 - AppDaemon uses MQTT to communicate with the Qolsys panel and Home Assistant.
 - Frigate uses MQTT to communicate with Home Assistant.
 
-1. Edit the docker-compose.yaml file and add the following to the services section:
+1. Edit `docker-compose.yml` and add the following to the services section:
 ```yaml
   mqtt:
     container_name: mqtt
-    image: eclipse-mosquitto:latest
+    logging: *default-logging
+    image: eclipse-mosquitto:2.1.2-alpine
     volumes:
       - /opt/homeautomation/mosquitto/config:/mosquitto/config
       - /opt/homeautomation/mosquitto/data:/mosquitto/data
@@ -214,7 +261,7 @@ listener 1883 0.0.0.0
 ## Authentication ##
 allow_anonymous true
 ```
-3. Start the container with `docker compose up -d`.
+3. Start the container with `docker compose up -d mqtt`.
 4. Log into Home Assistant
 5. Open Settings -> Devices and Services -> Integrations -> Add Integration.
 6. Search for MQTT and click on Configure.
@@ -222,17 +269,20 @@ allow_anonymous true
     - Broker: localhost
     - Port: 1883
 8. Click on Submit.
-9. Shut down the containers with `docker-compose down`.
+9. Leave MQTT running for the other services.
+
+Keep `log_dest file /mosquitto/log/mosquitto.log`; do not redirect the primary broker log to Docker stdout. Host logrotate reopens this file using SIGHUP after rotation. Anonymous MQTT access remains part of the existing deployment, not a security recommendation; authentication and network restrictions are still outstanding.
 
 ### AppDaemon and Qolsys Gateway
 
 AppDaemon allows for custom python jobs to run and interface with Home Assistant.  The Qolsys Gateway is an AppDaemon plugin that allows for the Qolsys panel to be integrated into Home Assistant.  It is possible to install the Qolsys Gateway from HACS, however at the time of this writing, it installs incorrectly so we will install it manually.
 
-1. Edit the docker-compose.yaml file and add the following to the services section:
+1. Edit `docker-compose.yml` and add the following to the services section:
 ```yaml
   appdaemon:
     container_name: appdaemon
-    image: acockburn/appdaemon:latest
+    logging: *default-logging
+    image: acockburn/appdaemon:4.4.2
     volumes:
       - /opt/homeautomation/appdaemon:/conf
       - /etc/localtime:/etc/localtime:ro
@@ -285,21 +335,22 @@ qolsys_panel:
     - `unzip main.zip`
     - `cp -r qolsysgw-main/apps/qolsysgw /opt/homeautomation/appdaemon/apps`
     - `rm -rf /opt/homeautomation/appdaemon/apps/temp`
-8. Start the containers with `docker compose up -d`.
+8. Start AppDaemon with `docker compose up -d appdaemon`.
 9. Verify that the sensors for the Qolsys gateway appear in Home Assistant.
-10. Shut down the containers with `docker-compose down`.
+10. Leave AppDaemon running. Its existing stdout/stderr logging is bounded by Docker's separate console policy; no new application file destination was introduced.
 
 ### Frigate
 
-1. Edit the docker-compose.yaml file and add the following to the services section:
+1. Edit `docker-compose.yml` and add the following to the services section:
 ```yaml
   frigate:
     container_name: frigate
+    logging: *default-logging
     privileged: true # this may not be necessary for all setups
     restart: unless-stopped
-    image: ghcr.io/blakeblackshear/frigate:stable
-    shm_size: "86mb" # update for your cameras based on calculation above
-    #This allows access to the Myriad X VPU for video inferencing.  Shouldn't need this if you're using the Intel GPU.
+    image: ghcr.io/blakeblackshear/frigate:0.18.0
+    shm_size: "256mb"
+    # Legacy USB passthrough was retained; detection uses the Intel GPU, not Myriad.
     device_cgroup_rules:
       - "c 189:* rmw" # enables access to the Myriad X VPU
     volumes:
@@ -307,81 +358,128 @@ qolsys_panel:
       - /etc/localtime:/etc/localtime:ro
       - /opt/homeautomation/frigate/config:/config
       - /media/external/frigate/storage:/media/frigate
-      # The instructions say to use tmpfs for the cache, but I found that it fills too fast and causes issues.  Instead, we'll use the hdd for the cache.
-      - type: tmpfs # Optional: 1GB of memory, reduces SSD/SD Card wear
-       target: /tmp/cache
-       tmpfs:
-         size: 1000000000
-      #-/media/usb/frigate/cache:/tmp/cache # Use the external drive for the cache
-    environment:
-      FRIGATE_RTSP_PASSWORD: "password"
+      - type: tmpfs
+        target: /tmp/cache
+        tmpfs:
+          size: 1000000000
     network_mode: host
 ```
-2. Create a file /opt/homeautomation/frigate/config/config.yml with the following contents.  Note, you should create an entry for each camera:
+2. Create `/opt/homeautomation/frigate/config/config.yml`. This four-camera example uses the 0.18 configuration shape. Replace every camera address and credential placeholder locally; URL-encode credentials containing reserved URL characters. An environment variable named `FRIGATE_RTSP_PASSWORD` does not automatically replace a password written literally in an RTSP URL.
 ```yaml
-# Camera configuration(s)
+version: 0.18-0
+
 cameras:
   Front:
     ffmpeg:
       inputs:
-        - path: rtsp://admin:123456@<CAMERA IP ADDRESS>:554/stream0
-          roles:
-            - record
-        - path: rtsp://admin:123456@<CAMERA IP ADDRESS>:554/stream1
-          roles:
-            - detect
-        output_args:
-        record: preset-record-generic-audio-aac
-    record:
-      enabled: True
-    snapshots:
-      enabled: True
-    detect:
-      enabled: True
+        - path: "rtsp://<CAMERA_USERNAME>:<CAMERA_PASSWORD>@<FRONT_CAMERA_IP>:554/stream0"
+          roles: [record]
+        - path: "rtsp://<CAMERA_USERNAME>:<CAMERA_PASSWORD>@<FRONT_CAMERA_IP>:554/stream1"
+          roles: [detect]
+    live:
+      streams:
+        Main stream (4 MP): Front
+  SideDoor:
+    ffmpeg:
+      inputs:
+        - path: "rtsp://<CAMERA_USERNAME>:<CAMERA_PASSWORD>@<SIDEDOOR_CAMERA_IP>:554/stream0"
+          roles: [record]
+        - path: "rtsp://<CAMERA_USERNAME>:<CAMERA_PASSWORD>@<SIDEDOOR_CAMERA_IP>:554/stream1"
+          roles: [detect]
+    live:
+      streams:
+        Main stream (4 MP): SideDoor
+  Back:
+    ffmpeg:
+      inputs:
+        - path: "rtsp://<CAMERA_USERNAME>:<CAMERA_PASSWORD>@<BACK_CAMERA_IP>:554/stream0"
+          roles: [record]
+        - path: "rtsp://<CAMERA_USERNAME>:<CAMERA_PASSWORD>@<BACK_CAMERA_IP>:554/stream1"
+          roles: [detect]
+    live:
+      streams:
+        Main stream (4 MP): Back
+  Side:
+    ffmpeg:
+      inputs:
+        - path: "rtsp://<CAMERA_USERNAME>:<CAMERA_PASSWORD>@<SIDE_CAMERA_IP>:554/stream0"
+          roles: [record]
+        - path: "rtsp://<CAMERA_USERNAME>:<CAMERA_PASSWORD>@<SIDE_CAMERA_IP>:554/stream1"
+          roles: [detect]
+    live:
+      streams:
+        Main stream (4 MP): Side
 
+go2rtc:
+  streams:
+    Front:
+      - "rtsp://<CAMERA_USERNAME>:<CAMERA_PASSWORD>@<FRONT_CAMERA_IP>:554/stream0#backchannel=0"
+      - "ffmpeg:Front#audio=aac"
+    SideDoor:
+      - "rtsp://<CAMERA_USERNAME>:<CAMERA_PASSWORD>@<SIDEDOOR_CAMERA_IP>:554/stream0#backchannel=0"
+      - "ffmpeg:SideDoor#audio=aac"
+    Back:
+      - "rtsp://<CAMERA_USERNAME>:<CAMERA_PASSWORD>@<BACK_CAMERA_IP>:554/stream0#backchannel=0"
+      - "ffmpeg:Back#audio=aac"
+    Side:
+      - "rtsp://<CAMERA_USERNAME>:<CAMERA_PASSWORD>@<SIDE_CAMERA_IP>:554/stream0#backchannel=0"
+      - "ffmpeg:Side#audio=aac"
+  webrtc:
+    candidates:
+      - "<FRIGATE_LAN_IP>:8555"
+      # Optional: add a reachable Tailscale address when using that network.
+      # - "<FRIGATE_VPN_IP>:8555"
 
-# Configuration for recording to save all recordings for 20 days.  All alerts and detections for 20 days as well or cusdtomize.
+# Existing retention was preserved, not resized for the available disk.
 record:
-  enabled: True
-  retain:
+  enabled: true
+  continuous:
     days: 20
-    mode: all
+  motion:
+    days: 20
   alerts:
     retain:
-      default: 20
+      days: 20
       mode: motion
   detections:
     retain:
-      default: 20
+      days: 20
       mode: motion
 
-# Objects we want to track during detection.
+detect:
+  enabled: true
+  width: 640
+  height: 360
+  fps: 5
+
+snapshots:
+  enabled: true
+
 objects:
   track:
     - person
-    - dog
-    - cat
 
 # URL for the MQTT server to communicate with Home Assistant.
 mqtt:
-  enabled: True
+  enabled: true
   host: upboard.local
   port: 1883
 
 # Hardware acceleration for the UP Squared Vision AI Dev Kit which is running an Intel processor.
 ffmpeg:
   hwaccel_args: preset-vaapi
+  output_args:
+    record: preset-record-generic-audio-aac
 
-# Configuration to use the OpenVino model with the Myriad VPU for inferencing.
+# Inference remains on the Intel GPU.
 detectors:
   ov:
     type: openvino
-    device: GPU #MYRIAD - use the GPU instead of the Myriad X VPU
-    model:
-      path: /openvino-model/ssdlite_mobilenet_v2.xml
+    device: GPU
 
 # Model configuration for the OpenVino model.
 model:
+  path: /openvino-model/ssdlite_mobilenet_v2.xml
   width: 300
   height: 300
   input_tensor: nhwc
@@ -393,7 +491,7 @@ logger:
   # Optional: default log level (default: shown below)
   default: info
 
-# Disable authentication on the Frigate UI.
+# Existing trusted-network settings; access hardening is still outstanding.
 auth:
   enabled: false
 
@@ -401,104 +499,105 @@ auth:
 tls:
   enabled: false
 ```
-3. Replace the name of your camera and rtsp url.
-4. Start the container with `docker compose up -d`.
-5. Open the Frigate UI at http://upboard.local:5000 and verify that your camera is working.
+3. Verify that each `live.streams` value exactly matches its go2rtc stream name: Front, SideDoor, Back, and Side.
+4. Validate Compose with `docker compose config --quiet`, then start only Frigate with `docker compose up -d --no-deps frigate`.
+5. Open http://upboard.local:5000 and verify live video, detection, new recordings, and audio for each camera. Refresh existing browser tabs after an upgrade.
 6. Follow the [instructions](https://docs.frigate.video/integrations/home-assistant) to integrate Frigate with Home Assistant.
   1. Home Assistant > HACS > Integrations > "Explore & Add Integrations" > Frigate
-  1. Shut down the containers with `docker-compose down`.
-  1. Start the containers with `docker compose up -d`.
+  1. Restart only Home Assistant when HACS requests it: `docker compose restart homeassistant`.
   1. Home Assistant > HACS > Search > Frigate 
-  1. Shut down the containers with `docker-compose down`.
-  1. Start the containers with `docker compose up -d`.
+  1. Restart only Home Assistant when required.
   1. Home Assistant > Settings > Devices & Services > Add Integration > Frigate
   1. Enter http://localhost:5000 as the Frigate URL.
   1. Install the Frigate Card from HACS.
-  1. Shut down the containers with `docker-compose down`.
-  1. Start the containers with `docker compose up -d`.
+  1. Reload the frontend or restart Home Assistant when required.
   1. Home Assistant > Overview > Add Card > Frigate
-7. Shut down the containers with `docker-compose down`.
+7. Leave the services running; avoid `docker compose down` for routine single-service changes.
 
-#### Frigate Recording Delete
+#### Live video, detection, and audio are separate
 
-There's an issue with the Frigate configuration where it's not deleting recordings.  The workaround is a cron job that deletes recordings older then 30 days.
+- **Recording:** direct camera main streams, H.264, 2560x1440 at 15 FPS. Recording was not rerouted through go2rtc.
+- **Detection:** camera substreams, 640x360 at 5 FPS, with OpenVINO GPU inference and VAAPI decoding.
+- **Live video:** go2rtc main streams, 2560x1440 at 15 FPS. Video is passed through, not transcoded. AAC audio conversion is available on demand.
+- **Smart Streaming:** active panes use HD video; idle panes can show lower-resolution detection snapshots, and offscreen panes may not stream. Continuous Streaming is a browser/camera-group preference and was not enabled globally.
 
-1. Create a file /opt/homeautomation/cleanup/deleterecordings.sh with the following contents:
-```bash
-#!/bin/bash
+All four restreams and browser playback were verified. New recordings contained valid, non-silent AAC audio, and database integrity checks passed. The reported shared-memory minimum was 162 MB; the configured 256 MB provides headroom.
 
-# Directory containing your video recordings
-BASE_DIR="/media/external/frigate/storage/recordings"
+Frigate 0.18 includes FFmpeg 8 and go2rtc 1.9.14 in this image. Intel GPU utilization reporting may be inaccurate on the old 5.4 kernel even while GPU inference and decoding work. Do not interpret a displayed 0% utilization as proof that acceleration is disabled.
 
-# Find and delete directories older than 30 days
-find "$BASE_DIR" -type d -mtime +30 -exec rm -rf {} \;
+See the [0.18.0 release notes](https://github.com/blakeblackshear/frigate/releases/tag/v0.18.0), [restream documentation](https://docs.frigate.video/configuration/restream/), and [live-view documentation](https://docs.frigate.video/configuration/live/).
 
-# Find and delete empty directories, including nested ones
-find "$BASE_DIR" -type d -empty -delete
-```
-1. Make the script executable:
-```bash
-chmod +x /opt/homeautomation/cleanup/deleterecordings.sh
-```
-1. Create a cron job to run the script daily:
-```bash
-crontab -e
-```
-1. Add the following line to the crontab file:
-```bash
-0 0 * * * /opt/homeautomation/cleanup/deleterecordings.sh
-```
+#### Recording retention
+
+Let Frigate manage recording expiration and its database. **Do not enable the old `deleterecordings.sh` cron workaround** or manually delete recording directories behind Frigate's back. The legacy cron entry was already disabled and was left disabled.
+
+The existing 20-day continuous/motion/alert/detection policy remains unchanged. The 2 TB recording drive was nearly full; observed usage was approximately 95 GB/day and retained history approximately 18.7 days. Those are measurements, not a guaranteed retention window.
+
+A future change to roughly 14-16 days of continuous and motion retention would provide more headroom. Almost every recorded segment registered motion, so reducing continuous retention alone while leaving motion at 20 days would save little. Export important footage before shortening retention: older recordings will expire sooner. Longer alert/detection retention can be considered separately.
+
+#### Safe upgrades and rollback
+
+1. Read release notes and check space on both `/` and `/media/external`. Docker images and the database use the internal disk; recordings use the external SSD.
+1. Retain/tag the currently running image before pulling a replacement. During this upgrade, the old image was retained as `ghcr.io/blakeblackshear/frigate:0.17.2`.
+1. Make a timestamped backup under `/opt/homeautomation/backups`, accessible only to the administrator (directory mode 0700). Save the original Compose file and Frigate configuration before editing.
+1. Use SQLite's backup API for a live database, or stop **only Frigate** before copying its complete configuration/database directory, including any WAL files. Do not simply copy a live database file.
+1. Pin the intended image tag, validate Compose and the new Frigate schema, and recreate only Frigate with `docker compose up -d --no-deps frigate`. Pull the new image before the outage when possible.
+1. Verify health, camera processing rates, fresh recordings, decoded audio, HD playback, and database integrity. The 0.17.2-to-0.18.0 upgrade caused recording gaps of approximately 72-80 seconds; downtime must be expected.
+
+Frigate migrated the configuration marker from `0.17-0` to `0.18-0`. For rollback, stop Frigate and restore the matching pre-upgrade configuration/database and old image together. Preserve recording files; do not run an old image against a migrated database without checking compatibility.
+
+Remove only explicitly identified unused images when reclaiming space. Keep running images and rollback images, and do not use broad volume-pruning commands. The images removed during this upgrade were Frigate 0.13.1 and the unused Home Assistant 2024.7, 2024.12, and 2025.1 images.
 
 ### Z-Wave
 
 1. Get the Z-Wave stick reference by running `ls /dev/serial/by-id/`.
-1. Edit the docker-compose.yaml file and add the following to the services section.  Make sure to replace the stick reference with your own.
+1. Edit `docker-compose.yml` and add the following under `services`. Replace the stick reference and session-secret placeholder locally.
 ```yaml
-zwave-js-ui:
+  zwave-js-ui:
     container_name: zwave-js-ui
-    image: zwavejs/zwave-js-ui:latest
+    logging: *default-logging
+    image: zwavejs/zwave-js-ui:11.23
     restart: unless-stopped
     tty: true
     stop_signal: SIGINT
     environment:
-        - SESSION_SECRET=mysupersecretkey
+        - SESSION_SECRET=<YOUR_RANDOM_SESSION_SECRET>
         - ZWAVEJS_EXTERNAL_CONFIG=/usr/src/app/store/.config-db
         - TZ=America/New_York
-    networks:
-        - zwave
     devices:
         - '/dev/serial/by-id/insert_stick_reference_here:/dev/zwave'
     volumes:
         - /opt/homeautomation/zwave:/usr/src/app/store
     network_mode: host
 ```
-1. Start the containers with `docker compose up -d`.
+1. Start Z-Wave JS UI with `docker compose up -d zwave-js-ui`.
 1. Open the Z-Wave UI at http://upboard.local:8091.
 1. Select Settings -> Home Assistant and enable WS-Server.  Be sure to save!
 1. Go to the Home Assistant UI at http://upboard.local:8123.
 1. Select Settings -> Devices and Services -> Integrations -> Add Integration.
 1. Search for Z-Wave and click on Submit.
 1. Add any z-wave devices to your Home Assistant system by selecting Z-Wave when adding a new device.
-1. Shut down the containers with `docker-compose down`.
+1. Keep driver file logging enabled (`zwave.logToFile: true`). The deployed driver log level remains `debug`; this maintenance did not change verbosity. Native daily files remain under `/opt/homeautomation/zwave/logs`, supplemented by the host size-rotation policy below.
 
 ### Portainer
 
 Portainer is a web interface for managing Docker containers.  It is useful for monitoring the status of your containers and logs.  This is not
 fool proof as Home Assistant and Portainer must both be up and running.  But, it's helpful in monitoring the status of all the other containers.
 
-1. Edit the docker-compose.yaml file and add the following to the services section:
+1. Edit `docker-compose.yml` and add the following to the services section:
 ```yaml
   portainer:
     container_name: portainer
-    image: portainer/portainer-ce
-    restart: always
+    logging: *default-logging
+    image: portainer/portainer-ce:2.45.0
+    restart: unless-stopped
     network_mode: host
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
       - /opt/homeautomation/portainer:/data
     command: --base-url="/portainer/"
 ```
-1. Start the containers with `docker compose up -d`.
+1. Start Portainer with `docker compose up -d portainer`.
 1. Open the Portainer UI at http://upboard.local:9000.
 1. Create an admin user and password.
 1. Select Local and Connect.
@@ -507,6 +606,191 @@ fool proof as Home Assistant and Portainer must both be up and running.  But, it
 1. Home Assistant > Settings > Devices & Services > Add Integration > Portainer
   1. Use `upboard.local:9000` as the URL.
 1. You can now create automations in Home Assistant to monitor your containers.
+
+## Logging and Rotation
+
+Application-owned logs stay in their existing bind-mounted folders under `/opt/homeautomation`; Docker/Portainer is **not** their replacement log store. The temporary experiment with redirecting Home Assistant, Mosquitto, and Z-Wave logs to Docker was reversed. Home Assistant's file-disable override was removed, Mosquitto's file destination restored, and Z-Wave's `logToFile` restored to `true`.
+
+| Logs | Owner and retention |
+|---|---|
+| Mosquitto file | Host logrotate: daily or above 10 MiB; 3 archives plus the active file; reopen with SIGHUP |
+| Home Assistant file | Host logrotate: daily or above 10 MiB; 3 compressed archives plus the active file |
+| Z-Wave driver files | Native daily files with existing seven-day retention; host rotation above 10 MiB, with 3 archives per dated filename |
+| Home Assistant crash log | Host rotation above 1 MiB; 3 compressed archives plus the active file |
+| All six containers' stdout/stderr | Docker `json-file`: 10 MiB per file, 3 files total per container, approximately 30 MiB per container |
+| Persistent system journal | systemd-journald: 512 MiB target maximum and 14-day retention |
+
+AppDaemon, Frigate, and Portainer retain their existing console logging. The Docker limits are a separate safeguard; they do not rotate files written inside bind mounts.
+
+### Application file rules
+
+Create `/etc/logrotate.d/homeautomation` on the **host**, owned by root and not writable by other users:
+
+```conf
+/opt/homeautomation/mosquitto/log/mosquitto.log {
+    daily
+    maxsize 10M
+    rotate 3
+    compress
+    delaycompress
+    missingok
+    notifempty
+    su root root
+    create 0600
+    olddir archive
+    createolddir 0700 root root
+    postrotate
+        running=$(/usr/bin/docker inspect --format '{{.State.Running}}' mqtt) || exit 1
+        if [ "$running" = true ]; then
+            /usr/bin/docker exec mqtt kill -HUP 1
+        fi
+    endscript
+}
+
+# Keep host rotation separate from Home Assistant's restart-time .log.1 file.
+/opt/homeautomation/homeassistant/home-assistant.log {
+    daily
+    maxsize 10M
+    rotate 3
+    copytruncate
+    compress
+    missingok
+    notifempty
+    su root root
+    olddir log-archive
+    createolddir 0700 root root
+}
+
+# Preserve the daily filenames managed by Z-Wave itself.
+/opt/homeautomation/zwave/logs/zwavejs_[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9].log {
+    size 10M
+    rotate 3
+    copytruncate
+    compress
+    missingok
+    notifempty
+    su root root
+    olddir archive
+    createolddir 0700 root root
+    lastaction
+        /usr/bin/find /opt/homeautomation/zwave/logs/archive -maxdepth 1 -type f -name 'zwavejs_*.log.*.gz' -mtime +7 -delete
+    endscript
+}
+
+# The crash handler keeps its file open and cannot reopen on signal.
+/opt/homeautomation/homeassistant/home-assistant.log.fault {
+    size 1M
+    rotate 3
+    copytruncate
+    compress
+    missingok
+    notifempty
+    su root root
+}
+```
+
+Important behavior:
+
+- `create 0600` preserves the existing Mosquitto log's ownership when creating its replacement. SIGHUP reopens the file without restarting the broker. `delaycompress` leaves the newest archive uncompressed until a later rotation.
+- Home Assistant and Z-Wave use `copytruncate` to preserve their open file descriptors. There is a small potential log-loss window between copying and truncating; this is not a lossless logging transport.
+- Home Assistant's separate restart-time `.log.1` is not replaced by the host archive directory.
+- Z-Wave's rotated archives are separate from its native daily-file index. The cleanup hook prunes archives matching `-mtime +7` during subsequent size rotations; it is not a continuously enforced seven-day deadline. Native seven-day cleanup still manages the original daily files.
+- File sizes are **rotation thresholds, not filesystem quotas**. Logs can exceed them between checks, and old oversized archives can remain until normal retention removes them.
+
+### Host scheduler and traditional system logs
+
+Keep the existing policies in `/etc/logrotate.conf`, but add `maxsize 10M` **before its existing** `include /etc/logrotate.d` line. Do not add a second include. Existing per-package archive counts and schedules remain unchanged; the inherited maximum-size check lets large traditional system logs rotate sooner.
+
+Create `/etc/systemd/system/logrotate.timer.d/override.conf`:
+
+```ini
+[Timer]
+OnCalendar=
+OnCalendar=*-*-* *:0/5:00
+AccuracySec=30s
+```
+
+This changes the host's existing `logrotate.timer` from daily to every five minutes, with up to 30 seconds of scheduling accuracy. The timer starts `logrotate.service`, which runs `/usr/sbin/logrotate /etc/logrotate.conf`. No additional container or continuously running custom script is needed.
+
+After creating the files, validate and activate:
+
+```bash
+sudo logrotate --debug /etc/logrotate.conf
+sudo systemd-analyze verify /lib/systemd/system/logrotate.timer
+sudo systemctl daemon-reload
+sudo systemctl enable logrotate.timer
+sudo systemctl restart logrotate.timer
+sudo systemctl start logrotate.service
+sudo systemctl list-timers logrotate.timer --all --no-pager
+sudo systemctl show logrotate.service --property=Result --property=ExecMainStatus
+```
+
+`--debug` validates without rotating files. Starting the service applies normal rules; it does not force every log to rotate.
+
+### System journal
+
+Create `/etc/systemd/journald.conf.d/60-log-limits.conf`:
+
+```ini
+[Journal]
+SystemMaxUse=512M
+SystemMaxFileSize=32M
+SystemKeepFree=2G
+RuntimeMaxUse=64M
+RuntimeMaxFileSize=16M
+MaxRetentionSec=14day
+```
+
+Apply and inspect:
+
+```bash
+sudo systemctl restart systemd-journald.service
+journalctl --disk-usage
+```
+
+These limits can remove older journal history. During the maintenance, approximately 4 GiB of journal usage was reduced to approximately 152 MiB; that was a point-in-time result, not the configured target. Camera recordings are unrelated to the journal.
+
+If immediate archive reclamation is intended, the following additionally rotates the active journal and vacuums archived journals. This deletes older journal history; do not run it merely as a read-only check:
+
+```bash
+sudo journalctl --rotate --vacuum-size=512M
+```
+
+### Applying Docker's separate console limits
+
+The shared `x-logging` anchor in `docker-compose.yml` must be referenced by **each of the six services**. A container restart alone does not apply a changed logging driver configuration: the container must be recreated.
+
+Validate Compose, then recreate **one service at a time**, checking readiness before proceeding. For example, with its existing image already present:
+
+```bash
+docker compose config --quiet
+docker compose up -d --no-deps --no-build --pull never mqtt
+```
+
+Repeat for the remaining services during an approved maintenance window. Expect brief service interruptions and a recording gap when Frigate is recreated. Do not use `docker compose down` or pull unrelated images just to apply logging limits.
+
+Verify the running settings:
+
+```bash
+docker inspect --format '{{.Name}} {{json .HostConfig.LogConfig}}' \
+  homeassistant portainer mqtt appdaemon frigate zwave-js-ui
+docker ps --format 'table {{.Names}}\t{{.Status}}'
+```
+
+Each container should report `json-file` with `max-size: 10m` and `max-file: 3`. Also verify application files are being written, Z-Wave's `/health` endpoint returns success, and Frigate is producing fresh recordings for every camera.
+
+The deployed policies were tested in isolation for below-threshold behavior, exact 10 MiB/1 MiB rotation thresholds, preservation of archived contents, three-archive retention, and expired Z-Wave archive cleanup. All services were checked after the rollout. Protected backups of the original configuration and logs remain under `/opt/homeautomation/backups`; these one-time backups are not a recurring backup strategy.
+
+## Outstanding Follow-up
+
+The following were assessed but **not changed**:
+
+- **Recording storage:** resize retention for available capacity, considering continuous and motion retention together. Log rotation does not resolve the nearly full recording SSD.
+- **Access protection:** enable/use Frigate's authenticated interface and restrict unauthenticated port 5000 to trusted integrations. Enabling Frigate authentication alone does not protect port 5000. MQTT authentication, camera credentials, unused camera services/P2P, and network restrictions need a coordinated review.
+- **Detection relevance:** consider motion masks, meaningful zones, and evidence-based person-filter tuning. Person-only tracking and the existing detection resolution/rate were preserved.
+- **Reliability:** monitor the upgraded FFmpeg/VAAPI path over a longer period before declaring the earlier decoder crashes resolved. Keep working GPU acceleration enabled.
+- **Recovery:** schedule consistent configuration/database backups, keep an off-machine copy, and test restoration.
+- **Host maintenance:** plan OS/kernel support separately. No OS, kernel, or camera firmware upgrade was performed.
 
 ## Enable Remote Access via VPN and Proxy
 1. Install [Tailscale](https://tailscale.com/kb/1039/install-ubuntu-2004).
