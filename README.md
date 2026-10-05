@@ -35,6 +35,7 @@ Completed changes:
 - Added HD live streams while retaining direct-to-camera recording inputs and low-resolution detection.
 - Preserved camera firmware, G.711 audio, recording retention, and GPU acceleration.
 - Added bounded Docker console logs, host-managed application file rotation, and explicit system journal limits.
+- Added bounded Prometheus host/container metrics and provisioned Grafana dashboards for troubleshooting.
 - Backed up configuration, logs, and the pre-upgrade Frigate database; retained the 0.17.2 image for rollback.
 - Removed only approved, unused old Docker images to provide upgrade space. No volumes or camera footage were manually deleted.
 
@@ -59,6 +60,8 @@ Examples use placeholders instead of deployed credentials, camera addresses, or 
 1. [Mosquitto MQTT Broker](https://mosquitto.org/) for communication between Home Assistant, AppDaemon, Frigate, and Z-Wave.
 1. [Portainer](https://www.portainer.io/) for managing and monitoring Docker containers.
 1. [Tailscale](https://tailscale.com/) for remote access.
+1. [Prometheus](https://prometheus.io/) with [Node Exporter](https://github.com/prometheus/node_exporter) and [cAdvisor](https://github.com/google/cadvisor) for bounded host and container metrics.
+1. [Grafana](https://grafana.com/) for provisioned host, hardware, and container dashboards.
 
 ## UP Squared Setup
 
@@ -114,6 +117,164 @@ Note, for purposes of this tutorial, the hostname for my Upboard device is upboa
         ```
     - `sudo apt-get update`
     - `sudo apt-get install docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin`
+
+### Host and Container Monitoring
+
+The deployed monitoring stack uses pinned images and stores its configuration in this repository:
+
+| Component | Image | Purpose |
+|---|---|---|
+| Prometheus | `prom/prometheus:v3.6.0` | Time-series collection and retention |
+| Grafana | `grafana/grafana:12.2.0` | Dashboards on port 3001 |
+| Node Exporter | `prom/node-exporter:v1.9.1` | Host CPU, memory, storage, network, pressure, temperature, and power-domain metrics |
+| cAdvisor | `gcr.io/cadvisor/cadvisor:v0.52.1` | Per-container CPU, memory, storage, and network metrics |
+
+Prometheus scrapes every 30 seconds. Data is retained for at most 14 days and has a hard 2 GiB limit; whichever limit is reached first wins. Prometheus uses a named volume rather than the external Frigate recording disk. Grafana data uses a separate named volume. Docker console output remains bounded by the shared `json-file` rotation policy.
+
+The repository includes:
+
+- `docker-compose.monitoring.yml`: standalone or additive monitoring services.
+- `monitoring/prometheus/prometheus.yml`: scrape jobs for Prometheus, Node Exporter, and cAdvisor.
+- `monitoring/grafana/provisioning/`: automatic Prometheus datasource and dashboard provisioning.
+- `monitoring/grafana/dashboards/upboard-health.json`: host utilization, filesystem, network, disk, and container overview.
+- `monitoring/grafana/dashboards/upboard-hardware.json`: per-core CPU usage/frequency, CPU temperatures, throttling, RAPL power domains, pressure stalls, OOM events, disk latency, filesystem state, and network errors.
+
+1. Copy the versioned monitoring configuration from this repository into the deployment directory:
+
+    ```bash
+    cd <PATH_TO_THIS_REPOSITORY>
+    sudo mkdir -p /opt/homeautomation/monitoring
+    sudo cp -a monitoring/. /opt/homeautomation/monitoring/
+    ```
+
+2. Edit `/opt/homeautomation/docker-compose.yml`. Add the following definitions beneath the existing `services:` key. Keep the existing `x-logging` anchor because these services reuse `*default-logging`:
+
+    ```yaml
+      prometheus:
+        container_name: prometheus
+        logging: *default-logging
+        image: prom/prometheus:v3.6.0
+        restart: unless-stopped
+        command:
+          - --config.file=/etc/prometheus/prometheus.yml
+          - --storage.tsdb.path=/prometheus
+          - --storage.tsdb.retention.time=14d
+          - --storage.tsdb.retention.size=2GB
+          - --web.enable-lifecycle
+        ports:
+          - "127.0.0.1:9090:9090"
+        volumes:
+          - /opt/homeautomation/monitoring/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+          - prometheus-data:/prometheus
+        networks:
+          - monitoring
+        depends_on:
+          - node-exporter
+          - cadvisor
+
+      grafana:
+        container_name: grafana
+        logging: *default-logging
+        image: grafana/grafana:12.2.0
+        restart: unless-stopped
+        environment:
+          GF_USERS_ALLOW_SIGN_UP: "false"
+        ports:
+          - "3001:3000"
+        volumes:
+          - grafana-data:/var/lib/grafana
+          - /opt/homeautomation/monitoring/grafana/provisioning/datasources/prometheus.yml:/etc/grafana/provisioning/datasources/prometheus.yml:ro
+          - /opt/homeautomation/monitoring/grafana/provisioning/dashboards/dashboards.yml:/etc/grafana/provisioning/dashboards/dashboards.yml:ro
+          - /opt/homeautomation/monitoring/grafana/dashboards:/var/lib/grafana/dashboards:ro
+        networks:
+          - monitoring
+        depends_on:
+          - prometheus
+
+      node-exporter:
+        container_name: node-exporter
+        logging: *default-logging
+        image: prom/node-exporter:v1.9.1
+        restart: unless-stopped
+        command:
+          - --path.procfs=/host/proc
+          - --path.sysfs=/host/sys
+          - --path.rootfs=/rootfs
+          - --collector.filesystem.mount-points-exclude=^/(dev|proc|sys|var/lib/docker/.+|var/lib/containers/storage/.+)($|/)
+        pid: host
+        volumes:
+          - /proc:/host/proc:ro
+          - /sys:/host/sys:ro
+          - /:/rootfs:ro,rslave
+          - /run/udev/data:/run/udev/data:ro
+        networks:
+          - monitoring
+
+      cadvisor:
+        container_name: cadvisor
+        logging: *default-logging
+        image: gcr.io/cadvisor/cadvisor:v0.52.1
+        restart: unless-stopped
+        privileged: true
+        devices:
+          - /dev/kmsg:/dev/kmsg
+        volumes:
+          - /:/rootfs:ro
+          - /var/run:/var/run:ro
+          - /sys:/sys:ro
+          - /var/lib/docker:/var/lib/docker:ro
+          - /dev/disk:/dev/disk:ro
+        networks:
+          - monitoring
+    ```
+
+3. Add the following top-level definitions at the end of `docker-compose.yml`. They must align with `services:` rather than being nested beneath it:
+
+    ```yaml
+    volumes:
+      prometheus-data:
+      grafana-data:
+
+    networks:
+      monitoring:
+    ```
+
+4. Validate the combined Compose file and start only the monitoring services:
+
+    ```bash
+    cd /opt/homeautomation
+    docker compose config --quiet
+    docker compose up -d prometheus grafana node-exporter cadvisor
+    ```
+
+As an alternative to editing the main file, copy `docker-compose.monitoring.yml` beside it and use both files:
+
+```bash
+cd /opt/homeautomation
+docker compose -f docker-compose.yml -f docker-compose.monitoring.yml up -d prometheus grafana node-exporter cadvisor
+```
+
+Open Grafana at `http://upboard.local:3001`. The initial credentials are `admin` / `admin`; change the password immediately. User sign-up is disabled. Prometheus binds only to `127.0.0.1:9090`, while Grafana is exposed on the LAN.
+
+Verify the deployment:
+
+```bash
+# All three jobs should return a value of 1.
+curl -fsSG --data-urlencode 'query=up' http://127.0.0.1:9090/api/v1/query
+
+# Confirm both retention limits.
+curl -fsS http://127.0.0.1:9090/api/v1/status/flags
+
+# Confirm Grafana and cAdvisor health.
+curl -fsS http://127.0.0.1:3001/api/health
+docker inspect --format '{{.State.Health.Status}}' cadvisor
+
+# Review persistent volume usage and remaining host storage.
+docker system df -v
+df -h /
+```
+
+This stack helps distinguish sustained CPU, memory, temperature, disk, network, and container problems before an incident. Locally stored metrics cannot prove a sudden loss of input power: collection stops at the reset, and the final samples may not be flushed. UPS/voltage telemetry or remote Prometheus storage is required for direct power evidence. Intel i915 GPU utilization is not currently exported on the deployed UP-specific 5.4 kernel; RAPL uncore energy is only a power-domain proxy, not GPU utilization.
 
 
 ### Setup External Drive

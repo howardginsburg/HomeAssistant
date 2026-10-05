@@ -1,0 +1,140 @@
+{
+  "annotations": {"list": []},
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 1,
+  "id": null,
+  "links": [],
+  "panels": [
+    {
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "fieldConfig": {"defaults": {"max": 100, "min": 0, "unit": "percent"}, "overrides": []},
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 0},
+      "id": 1,
+      "options": {"legend": {"calcs": ["mean", "max"], "displayMode": "table", "placement": "bottom", "showLegend": true}, "tooltip": {"mode": "multi", "sort": "desc"}},
+      "targets": [{"expr": "100 - (avg by (cpu) (rate(node_cpu_seconds_total{mode=\"idle\"}[5m])) * 100)", "legendFormat": "Core {{cpu}}", "refId": "A"}],
+      "title": "CPU Usage by Core",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "fieldConfig": {"defaults": {"unit": "hertz"}, "overrides": []},
+      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 0},
+      "id": 2,
+      "options": {"legend": {"calcs": ["mean", "min", "max"], "displayMode": "table", "placement": "bottom", "showLegend": true}, "tooltip": {"mode": "multi", "sort": "desc"}},
+      "targets": [{"expr": "node_cpu_scaling_frequency_hertz", "legendFormat": "Core {{cpu}}", "refId": "A"}],
+      "title": "CPU Frequency by Core",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "fieldConfig": {"defaults": {"thresholds": {"mode": "absolute", "steps": [{"color": "green", "value": null}, {"color": "orange", "value": 70}, {"color": "red", "value": 85}]}, "unit": "celsius"}, "overrides": []},
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 8},
+      "id": 3,
+      "options": {"legend": {"calcs": ["mean", "max"], "displayMode": "table", "placement": "bottom", "showLegend": true}, "tooltip": {"mode": "multi", "sort": "desc"}},
+      "targets": [{"expr": "node_hwmon_temp_celsius * on (chip, sensor) group_left(label) node_hwmon_sensor_label", "legendFormat": "{{label}}", "refId": "A"}],
+      "title": "CPU Temperatures",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "fieldConfig": {"defaults": {"min": 0, "unit": "watt"}, "overrides": []},
+      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 8},
+      "id": 4,
+      "options": {"legend": {"calcs": ["mean", "max"], "displayMode": "table", "placement": "bottom", "showLegend": true}, "tooltip": {"mode": "multi", "sort": "desc"}},
+      "targets": [{"expr": "rate(node_rapl_package_joules_total[5m])", "legendFormat": "Package", "refId": "A"}, {"expr": "rate(node_rapl_core_joules_total[5m])", "legendFormat": "CPU cores", "refId": "B"}, {"expr": "rate(node_rapl_uncore_joules_total[5m])", "legendFormat": "Uncore / graphics domain", "refId": "C"}, {"expr": "rate(node_rapl_dram_joules_total[5m])", "legendFormat": "DRAM", "refId": "D"}],
+      "title": "RAPL Power Domains",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "fieldConfig": {"defaults": {"min": 0, "unit": "short"}, "overrides": []},
+      "gridPos": {"h": 6, "w": 6, "x": 0, "y": 16},
+      "id": 5,
+      "options": {"colorMode": "value", "graphMode": "area", "justifyMode": "auto", "orientation": "auto", "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false}, "textMode": "auto", "wideLayout": true},
+      "targets": [{"expr": "sum(increase(node_cpu_core_throttles_total[1h])) + sum(increase(node_cpu_package_throttles_total[1h]))", "refId": "A"}],
+      "title": "CPU Throttles (1h)",
+      "type": "stat"
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "fieldConfig": {"defaults": {"min": 0, "unit": "short"}, "overrides": []},
+      "gridPos": {"h": 6, "w": 6, "x": 6, "y": 16},
+      "id": 6,
+      "options": {"colorMode": "value", "graphMode": "area", "justifyMode": "auto", "orientation": "auto", "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false}, "textMode": "auto", "wideLayout": true},
+      "targets": [{"expr": "increase(node_vmstat_oom_kill[1h])", "refId": "A"}],
+      "title": "OOM Kills (1h)",
+      "type": "stat"
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "fieldConfig": {"defaults": {"mappings": [{"options": {"0": {"color": "green", "text": "READ-WRITE"}, "1": {"color": "red", "text": "READ-ONLY"}}, "type": "value"}]}, "overrides": []},
+      "gridPos": {"h": 6, "w": 6, "x": 12, "y": 16},
+      "id": 7,
+      "options": {"colorMode": "background", "graphMode": "none", "justifyMode": "auto", "orientation": "auto", "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false}, "textMode": "auto", "wideLayout": true},
+      "targets": [{"expr": "node_filesystem_readonly{mountpoint=\"/\"}", "refId": "A"}],
+      "title": "Root Filesystem State",
+      "type": "stat"
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "fieldConfig": {"defaults": {"min": 0, "unit": "short"}, "overrides": []},
+      "gridPos": {"h": 6, "w": 6, "x": 18, "y": 16},
+      "id": 8,
+      "options": {"colorMode": "value", "graphMode": "area", "justifyMode": "auto", "orientation": "auto", "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false}, "textMode": "auto", "wideLayout": true},
+      "targets": [{"expr": "sum(increase(node_network_receive_errs_total[1h]) + increase(node_network_transmit_errs_total[1h]) + increase(node_network_receive_drop_total[1h]) + increase(node_network_transmit_drop_total[1h]))", "refId": "A"}],
+      "title": "Network Errors / Drops (1h)",
+      "type": "stat"
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "fieldConfig": {"defaults": {"max": 100, "min": 0, "unit": "percent"}, "overrides": []},
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 22},
+      "id": 9,
+      "options": {"legend": {"calcs": ["mean", "max"], "displayMode": "table", "placement": "bottom", "showLegend": true}, "tooltip": {"mode": "multi", "sort": "desc"}},
+      "targets": [{"expr": "rate(node_pressure_cpu_waiting_seconds_total[5m]) * 100", "legendFormat": "CPU waiting", "refId": "A"}, {"expr": "rate(node_pressure_io_waiting_seconds_total[5m]) * 100", "legendFormat": "I/O waiting", "refId": "B"}, {"expr": "rate(node_pressure_io_stalled_seconds_total[5m]) * 100", "legendFormat": "I/O stalled", "refId": "C"}, {"expr": "rate(node_pressure_memory_waiting_seconds_total[5m]) * 100", "legendFormat": "Memory waiting", "refId": "D"}],
+      "title": "Pressure Stall Information",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "fieldConfig": {"defaults": {"max": 100, "min": 0, "unit": "percent"}, "overrides": []},
+      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 22},
+      "id": 10,
+      "options": {"legend": {"calcs": ["mean", "max"], "displayMode": "table", "placement": "bottom", "showLegend": true}, "tooltip": {"mode": "multi", "sort": "desc"}},
+      "targets": [{"expr": "rate(node_disk_io_time_seconds_total{device!~\"loop.*|ram.*\"}[5m]) * 100", "legendFormat": "{{device}}", "refId": "A"}],
+      "title": "Disk Utilization",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "fieldConfig": {"defaults": {"min": 0, "unit": "s"}, "overrides": []},
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 30},
+      "id": 11,
+      "options": {"legend": {"calcs": ["mean", "max"], "displayMode": "table", "placement": "bottom", "showLegend": true}, "tooltip": {"mode": "multi", "sort": "desc"}},
+      "targets": [{"expr": "rate(node_disk_read_time_seconds_total{device!~\"loop.*|ram.*\"}[5m]) / clamp_min(rate(node_disk_reads_completed_total{device!~\"loop.*|ram.*\"}[5m]), 0.001)", "legendFormat": "{{device}} read", "refId": "A"}, {"expr": "rate(node_disk_write_time_seconds_total{device!~\"loop.*|ram.*\"}[5m]) / clamp_min(rate(node_disk_writes_completed_total{device!~\"loop.*|ram.*\"}[5m]), 0.001)", "legendFormat": "{{device}} write", "refId": "B"}],
+      "title": "Average Disk I/O Latency",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "fieldConfig": {"defaults": {"min": 0, "unit": "short"}, "overrides": []},
+      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 30},
+      "id": 12,
+      "options": {"legend": {"calcs": ["lastNotNull"], "displayMode": "table", "placement": "bottom", "showLegend": true}, "tooltip": {"mode": "multi", "sort": "desc"}},
+      "targets": [{"expr": "rate(node_vmstat_pgmajfault[5m])", "legendFormat": "Major faults/s", "refId": "A"}, {"expr": "rate(node_vmstat_pswpin[5m])", "legendFormat": "Swap in/s", "refId": "B"}, {"expr": "rate(node_vmstat_pswpout[5m])", "legendFormat": "Swap out/s", "refId": "C"}],
+      "title": "Memory Pressure Events",
+      "type": "timeseries"
+    }
+  ],
+  "refresh": "15s",
+  "schemaVersion": 41,
+  "tags": ["hardware", "homeautomation", "host"],
+  "templating": {"list": []},
+  "time": {"from": "now-6h", "to": "now"},
+  "timepicker": {},
+  "timezone": "browser",
+  "title": "UP Board Hardware",
+  "uid": "upboard-hardware",
+  "version": 1
+}
