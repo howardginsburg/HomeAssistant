@@ -137,7 +137,7 @@ The repository includes:
 - `monitoring/prometheus/prometheus.yml`: scrape jobs for Prometheus, Node Exporter, and cAdvisor.
 - `monitoring/grafana/provisioning/`: automatic Prometheus datasource and dashboard provisioning.
 - `monitoring/grafana/dashboards/upboard-health.json`: host utilization, filesystem, network, disk, and container overview.
-- `monitoring/grafana/dashboards/upboard-hardware.json`: per-core CPU usage/frequency, CPU temperatures, throttling, RAPL power domains, pressure stalls, OOM events, disk latency, filesystem state, and network errors.
+- `monitoring/grafana/dashboards/upboard-hardware.json`: per-core CPU usage/frequency, CPU temperatures, throttling, RAPL power domains, estimated CPU-package current at 5 V, pressure stalls, OOM events, disk latency, filesystem state, and network errors.
 
 1. Copy the versioned monitoring configuration from this repository into the deployment directory:
 
@@ -274,7 +274,7 @@ docker system df -v
 df -h /
 ```
 
-This stack helps distinguish sustained CPU, memory, temperature, disk, network, and container problems before an incident. Locally stored metrics cannot prove a sudden loss of input power: collection stops at the reset, and the final samples may not be flushed. UPS/voltage telemetry or remote Prometheus storage is required for direct power evidence. Intel i915 GPU utilization is not currently exported on the deployed UP-specific 5.4 kernel; RAPL uncore energy is only a power-domain proxy, not GPU utilization.
+This stack helps distinguish sustained CPU, memory, temperature, disk, network, and container problems before an incident. The estimated current panel divides RAPL CPU-package watts by the 5 V board input; it excludes USB devices, storage, networking, regulator losses, and other board loads, so it is not measured barrel-jack current. Locally stored metrics cannot prove a sudden loss of input power: collection stops at the reset, and the final samples may not be flushed. UPS/voltage telemetry or remote Prometheus storage is required for direct power evidence. Intel i915 GPU utilization is not currently exported on the deployed UP-specific 5.4 kernel; RAPL uncore energy is only a power-domain proxy, not GPU utilization.
 
 
 ### Setup External Drive
